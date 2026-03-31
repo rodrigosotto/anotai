@@ -11,7 +11,6 @@ import { Controller, useForm } from "react-hook-form";
 import {
   ActivityIndicator,
   Alert,
-  Animated,
   BackHandler,
   KeyboardAvoidingView,
   Platform,
@@ -22,6 +21,11 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useNoteRepository } from "@/src/repositories/noteRepository";
@@ -30,25 +34,18 @@ import { noteSchema, type NoteFormValues } from "@/src/schemas/noteSchema";
 // ─── Animated inline error ────────────────────────────────────────────────────
 
 function AnimatedError({ message }: { message?: string }) {
-  const opacity = useRef(new Animated.Value(0)).current;
+  const opacity = useSharedValue(0);
 
   useEffect(() => {
-    if (message) {
-      opacity.setValue(0);
-      Animated.timing(opacity, {
-        toValue: 1,
-        duration: 220,
-        useNativeDriver: true,
-      }).start();
-    } else {
-      opacity.setValue(0);
-    }
+    opacity.value = withTiming(message ? 1 : 0, { duration: 220 });
   }, [message, opacity]);
+
+  const animStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
 
   if (!message) return null;
 
   return (
-    <Animated.View style={{ opacity }}>
+    <Animated.View style={animStyle}>
       <Text style={styles.errorText}>{message}</Text>
     </Animated.View>
   );
@@ -72,14 +69,10 @@ export default function NewNoteScreen() {
   const contentLength = (watch("content") ?? "").length;
   const isNearLimit = contentLength > 9_500;
 
-  // ── Dirty ref avoids re-subscribing the BackHandler on every keystroke ────
-
   const isDirtyRef = useRef(false);
   useEffect(() => {
     isDirtyRef.current = formState.isDirty;
   });
-
-  // ── Local submitting state (complements formState.isSubmitting) ───────────
 
   const [isSaving, setIsSaving] = useState(false);
 
@@ -146,7 +139,6 @@ export default function NewNoteScreen() {
     [doSaveDraft, reset],
   );
 
-  // Android hardware back button
   useEffect(() => {
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
       if (!isDirtyRef.current) return false;
@@ -156,7 +148,6 @@ export default function NewNoteScreen() {
     return () => sub.remove();
   }, [showUnsavedAlert]);
 
-  // Stack navigation beforeRemove (fires when screen is popped from a stack)
   useEffect(() => {
     const unsub = navigation.addListener("beforeRemove", (e: any) => {
       if (!isDirtyRef.current) return;
@@ -293,7 +284,6 @@ const styles = StyleSheet.create({
     gap: 12,
     flexGrow: 1,
   },
-  // Header
   headerLoader: {
     marginRight: 8,
   },
@@ -306,7 +296,6 @@ const styles = StyleSheet.create({
   headerSaveDisabled: {
     color: "#aeaeb2",
   },
-  // Fields
   fieldWrap: {
     gap: 4,
   },

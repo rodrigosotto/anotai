@@ -3,68 +3,46 @@ import { router, useFocusEffect } from "expo-router";
 import {
   useCallback,
   useDeferredValue,
-  useEffect,
   useRef,
   useState,
 } from "react";
 import {
-  Animated,
+  Pressable,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
-  Pressable,
 } from "react-native";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+  ZoomIn,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { NoteCard } from "@/src/components/NoteCard";
+import { Skeleton } from "@/src/components/ui/Skeleton";
 import { useNotes, type DateFilter } from "@/src/hooks/useNotes";
 import type { Note } from "@/src/types/note";
 
-// ─── Skeleton ─────────────────────────────────────────────────────────────────
-
-function SkeletonCard({ opacity }: { opacity: Animated.Value }) {
-  return (
-    <Animated.View style={[styles.skeletonCard, { opacity }]}>
-      <View style={styles.skeletonAccent} />
-      <View style={styles.skeletonContent}>
-        <View style={[styles.skeletonLine, styles.skeletonLineTitle]} />
-        <View style={[styles.skeletonLine, styles.skeletonLineBody]} />
-        <View style={[styles.skeletonLine, styles.skeletonLineDate]} />
-      </View>
-    </Animated.View>
-  );
-}
+// ─── Skeleton list ────────────────────────────────────────────────────────────
 
 function SkeletonList() {
-  const opacity = useRef(new Animated.Value(0.4)).current;
-
-  useEffect(() => {
-    const anim = Animated.loop(
-      Animated.sequence([
-        Animated.timing(opacity, {
-          toValue: 1,
-          duration: 700,
-          useNativeDriver: true,
-        }),
-        Animated.timing(opacity, {
-          toValue: 0.4,
-          duration: 700,
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    anim.start();
-    return () => anim.stop();
-  }, [opacity]);
-
   return (
     <View style={styles.skeletonContainer}>
-      <SkeletonCard opacity={opacity} />
-      <SkeletonCard opacity={opacity} />
-      <SkeletonCard opacity={opacity} />
-      <SkeletonCard opacity={opacity} />
+      {[0, 1, 2, 3].map((i) => (
+        <View key={i} style={styles.skeletonCard}>
+          <Skeleton width={4} height={88} borderRadius={0} />
+          <View style={styles.skeletonContent}>
+            <Skeleton width="60%" height={13} />
+            <Skeleton width="90%" height={11} />
+            <Skeleton width="30%" height={10} />
+          </View>
+        </View>
+      ))}
     </View>
   );
 }
@@ -86,7 +64,7 @@ function EmptySearch({ term }: { term: string }) {
     <View style={styles.emptyContainer}>
       <Text style={styles.emptyIcon}>🔍</Text>
       <Text style={styles.emptyTitle}>Nenhuma nota encontrada</Text>
-      <Text style={styles.emptySubtitle}>para "{term}"</Text>
+      <Text style={styles.emptySubtitle}>para &quot;{term}&quot;</Text>
     </View>
   );
 }
@@ -139,7 +117,6 @@ export default function NotesScreen() {
   const [dateFilter, setDateFilter] = useState<DateFilter>("all");
   const [searchOpen, setSearchOpen] = useState(false);
 
-  // useDeferredValue keeps the search input snappy while the SQL query catches up
   const deferredQuery = useDeferredValue(rawQuery);
 
   const { notes, isLoading, error, deleteNote, refresh } = useNotes({
@@ -147,57 +124,54 @@ export default function NotesScreen() {
     dateFilter,
   });
 
-  // Re-fetch when the tab gains focus (e.g. after creating/editing a note)
   useFocusEffect(
     useCallback(() => {
       refresh();
     }, [refresh]),
   );
 
-  // ── Search bar animation (height-based expand/collapse) ──────────────────
+  // ── Search bar animation ──────────────────────────────────────────────────
 
-  const searchHeight = useRef(new Animated.Value(0)).current;
+  const searchHeight = useSharedValue(0);
   const searchInputRef = useRef<TextInput>(null);
 
   const toggleSearch = useCallback(() => {
     const opening = !searchOpen;
     setSearchOpen(opening);
-    Animated.timing(searchHeight, {
-      toValue: opening ? 52 : 0,
-      duration: 220,
-      useNativeDriver: false,
-    }).start(() => {
-      if (opening) {
-        searchInputRef.current?.focus();
-      } else {
-        setRawQuery("");
-      }
-    });
+    searchHeight.value = withTiming(opening ? 52 : 0, { duration: 220 });
+    if (opening) {
+      setTimeout(() => searchInputRef.current?.focus(), 230);
+    } else {
+      setRawQuery("");
+    }
   }, [searchOpen, searchHeight]);
+
+  const searchWrapStyle = useAnimatedStyle(() => ({
+    height: searchHeight.value,
+    overflow: "hidden",
+  }));
 
   // ── FAB scale animation ───────────────────────────────────────────────────
 
-  const fabScale = useRef(new Animated.Value(1)).current;
+  const fabScale = useSharedValue(1);
 
   const onFabPressIn = useCallback(() => {
-    Animated.spring(fabScale, {
-      toValue: 0.88,
-      useNativeDriver: true,
-    }).start();
+    fabScale.value = withSpring(0.88, { damping: 15, stiffness: 300 });
   }, [fabScale]);
 
   const onFabPressOut = useCallback(() => {
-    Animated.spring(fabScale, {
-      toValue: 1,
-      useNativeDriver: true,
-    }).start();
+    fabScale.value = withSpring(1, { damping: 15, stiffness: 300 });
   }, [fabScale]);
+
+  const fabScaleStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: fabScale.value }],
+  }));
 
   const onFabPress = useCallback(() => {
     router.push("/(tabs)/new");
   }, []);
 
-  // ── FlashList handlers (stable refs required for perf) ────────────────────
+  // ── FlashList handlers ────────────────────────────────────────────────────
 
   const handleNotePress = useCallback((id: string) => {
     router.push(`/note/${id}`);
@@ -211,11 +185,12 @@ export default function NotesScreen() {
   );
 
   const renderItem = useCallback(
-    ({ item }: { item: Note }) => (
+    ({ item, index }: { item: Note; index: number }) => (
       <NoteCard
         note={item}
         onPress={handleNotePress}
         onDelete={handleNoteDelete}
+        index={index}
       />
     ),
     [handleNotePress, handleNoteDelete],
@@ -257,7 +232,7 @@ export default function NotesScreen() {
 
       {/* ── Animated search bar ── */}
       <Animated.View
-        style={[styles.searchWrap, { height: searchHeight }]}
+        style={[styles.searchWrap, searchWrapStyle]}
         pointerEvents={searchOpen ? "auto" : "none"}
       >
         <TextInput
@@ -303,9 +278,11 @@ export default function NotesScreen() {
 
       {/* ── FAB ── */}
       <Animated.View
+        entering={ZoomIn.springify().damping(14)}
         style={[
           styles.fab,
-          { bottom: insets.bottom + 24, transform: [{ scale: fabScale }] },
+          { bottom: insets.bottom + 24 },
+          fabScaleStyle,
         ]}
       >
         <TouchableOpacity
@@ -366,7 +343,6 @@ const styles = StyleSheet.create({
   },
   // Search bar
   searchWrap: {
-    overflow: "hidden",
     paddingHorizontal: 16,
   },
   searchInput: {
@@ -459,28 +435,10 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
-  skeletonAccent: {
-    width: 4,
-    backgroundColor: "#E5E5EA",
-  },
   skeletonContent: {
     flex: 1,
     padding: 12,
     justifyContent: "space-between",
-  },
-  skeletonLine: {
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: "#E5E5EA",
-  },
-  skeletonLineTitle: {
-    width: "60%",
-  },
-  skeletonLineBody: {
-    width: "90%",
-  },
-  skeletonLineDate: {
-    width: "30%",
   },
   // FAB
   fab: {
