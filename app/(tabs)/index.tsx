@@ -1,5 +1,5 @@
 import { FlashList } from "@shopify/flash-list";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import {
   useCallback,
   useDeferredValue,
@@ -142,10 +142,17 @@ export default function NotesScreen() {
   // useDeferredValue keeps the search input snappy while the SQL query catches up
   const deferredQuery = useDeferredValue(rawQuery);
 
-  const { notes, isLoading, error, deleteNote } = useNotes({
+  const { notes, isLoading, error, deleteNote, refresh } = useNotes({
     searchQuery: deferredQuery,
     dateFilter,
   });
+
+  // Re-fetch when the tab gains focus (e.g. after creating/editing a note)
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [refresh]),
+  );
 
   // ── Search bar animation (height-based expand/collapse) ──────────────────
 

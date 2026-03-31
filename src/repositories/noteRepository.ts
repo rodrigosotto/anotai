@@ -1,10 +1,11 @@
+import { randomUUID } from "expo-crypto";
 import { useSQLiteContext } from "expo-sqlite";
 import { useCallback, useMemo } from "react";
 
 import type { Note, NoteInput, SortOrder } from "../types/note";
 
 function generateId(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  return randomUUID();
 }
 
 function buildOrderClause(sort: SortOrder): string {
