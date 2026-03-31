@@ -1,47 +1,24 @@
-import { useCallback, useRef } from "react";
-import {
-  Alert,
-  Animated,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
-import {
-  PanGestureHandler,
-  State,
-  type GestureEvent,
-  type HandlerStateChangeEvent,
-  type PanGestureHandlerEventPayload,
-} from "react-native-gesture-handler";
+import { useCallback } from "react";
+import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import Animated, {
+  FadeInDown,
+  FadeOutLeft,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from "react-native-reanimated";
 
+import { getNoteColor } from "../theme/colors";
 import type { Note } from "../types/note";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
-
-const ACCENT_PALETTE = [
-  "#4A90D9",
-  "#E8854A",
-  "#5BAD72",
-  "#9B59B6",
-  "#E74C3C",
-  "#1ABC9C",
-  "#F39C12",
-  "#2980B9",
-];
 
 const DELETE_BUTTON_WIDTH = 72;
 const SWIPE_OPEN_THRESHOLD = DELETE_BUTTON_WIDTH / 2;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function accentColorFromId(id: string): string {
-  let sum = 0;
-  for (let i = 0; i < id.length; i++) {
-    sum += id.charCodeAt(i);
-  }
-  return ACCENT_PALETTE[sum % ACCENT_PALETTE.length];
-}
 
 const dateFormatter = new Intl.DateTimeFormat("pt-BR", {
   day: "2-digit",
@@ -55,74 +32,17 @@ export interface NoteCardProps {
   note: Note;
   onPress: (id: string) => void;
   onDelete: (id: string) => void;
+  index?: number;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export function NoteCard({ note, onPress, onDelete }: NoteCardProps) {
-  const accent = accentColorFromId(note.id);
-  const translateX = useRef(new Animated.Value(0)).current;
-  const savedOffset = useRef(0);
-  const isOpen = useRef(false);
+export function NoteCard({ note, onPress, onDelete, index = 0 }: NoteCardProps) {
+  const accent = getNoteColor(note.id);
+  const translateX = useSharedValue(0);
+  const isOpen = useSharedValue(false);
 
-  // Stable reference — translateX Animated.Value never changes
-  const onGestureEvent = useRef(
-    Animated.event<GestureEvent<PanGestureHandlerEventPayload>>(
-      [{ nativeEvent: { translationX: translateX } }],
-      { useNativeDriver: true },
-    ),
-  ).current;
-
-  const onHandlerStateChange = useCallback(
-    (event: HandlerStateChangeEvent<PanGestureHandlerEventPayload>) => {
-      const { state, translationX, velocityX } = event.nativeEvent;
-
-      if (state === State.BEGAN) {
-        // Anchor the Animated.Value to the current resting position
-        translateX.setOffset(savedOffset.current);
-        translateX.setValue(0);
-      } else if (
-        state === State.END ||
-        state === State.CANCELLED ||
-        state === State.FAILED
-      ) {
-        translateX.flattenOffset();
-        const projected = savedOffset.current + translationX;
-        let toValue: number;
-
-        if (projected < -SWIPE_OPEN_THRESHOLD || velocityX < -0.8) {
-          toValue = -DELETE_BUTTON_WIDTH;
-          isOpen.current = true;
-        } else {
-          toValue = 0;
-          isOpen.current = false;
-        }
-
-        savedOffset.current = toValue;
-        Animated.spring(translateX, {
-          toValue,
-          useNativeDriver: true,
-          bounciness: 2,
-        }).start();
-      }
-    },
-    [translateX],
-  );
-
-  const handleCardPress = useCallback(() => {
-    if (isOpen.current) {
-      savedOffset.current = 0;
-      isOpen.current = false;
-      Animated.spring(translateX, {
-        toValue: 0,
-        useNativeDriver: true,
-      }).start();
-    } else {
-      onPress(note.id);
-    }
-  }, [note.id, onPress, translateX]);
-
-  const handleDeletePress = useCallback(() => {
+  const handleDeleteConfirm = useCallback(() => {
     Alert.alert("Excluir nota", "Tem certeza que deseja excluir esta nota?", [
       { text: "Cancelar", style: "cancel" },
       {
@@ -133,16 +53,57 @@ export function NoteCard({ note, onPress, onDelete }: NoteCardProps) {
     ]);
   }, [note.id, onDelete]);
 
+  const handleCardPress = useCallback(() => {
+    if (isOpen.value) {
+      isOpen.value = false;
+      translateX.value = withSpring(0, { damping: 20, stiffness: 200 });
+    } else {
+      onPress(note.id);
+    }
+  }, [note.id, onPress, translateX, isOpen]);
+
+  const panGesture = Gesture.Pan()
+    .activeOffsetX([-10, 10])
+    .failOffsetY([-5, 5])
+    .onUpdate((e) => {
+      const newVal = (isOpen.value ? -DELETE_BUTTON_WIDTH : 0) + e.translationX;
+      translateX.value = Math.max(-DELETE_BUTTON_WIDTH, Math.min(0, newVal));
+    })
+    .onEnd((e) => {
+      const projected =
+        (isOpen.value ? -DELETE_BUTTON_WIDTH : 0) + e.translationX;
+      const shouldOpen = projected < -SWIPE_OPEN_THRESHOLD || e.velocityX < -0.8;
+
+      if (shouldOpen) {
+        translateX.value = withSpring(-DELETE_BUTTON_WIDTH, {
+          damping: 20,
+          stiffness: 200,
+        });
+        isOpen.value = true;
+      } else {
+        translateX.value = withSpring(0, { damping: 20, stiffness: 200 });
+        isOpen.value = false;
+      }
+    });
+
+  const cardStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }],
+  }));
+
+  const enterDelay = Math.min(index * 50, 200);
+
   return (
-    // Outer view carries the shadow — not clipped by overflow:hidden
-    <View style={styles.outerContainer}>
-      {/* Inner container clips the horizontal swipe */}
+    <Animated.View
+      entering={FadeInDown.delay(enterDelay).duration(280)}
+      exiting={FadeOutLeft.duration(220)}
+      style={styles.outerContainer}
+    >
       <View style={styles.innerContainer}>
         {/* Delete area revealed on left-swipe */}
         <View style={styles.deleteArea}>
           <TouchableOpacity
             style={styles.deleteButton}
-            onPress={handleDeletePress}
+            onPress={() => runOnJS(handleDeleteConfirm)()}
             accessibilityLabel="Excluir nota"
             accessibilityRole="button"
           >
@@ -150,15 +111,8 @@ export function NoteCard({ note, onPress, onDelete }: NoteCardProps) {
           </TouchableOpacity>
         </View>
 
-        <PanGestureHandler
-          onGestureEvent={onGestureEvent}
-          onHandlerStateChange={onHandlerStateChange}
-          activeOffsetX={[-10, 10]}
-          failOffsetY={[-5, 5]}
-        >
-          <Animated.View
-            style={[styles.card, { transform: [{ translateX }] }]}
-          >
+        <GestureDetector gesture={panGesture}>
+          <Animated.View style={[styles.card, cardStyle]}>
             <TouchableOpacity
               onPress={handleCardPress}
               activeOpacity={0.7}
@@ -190,9 +144,9 @@ export function NoteCard({ note, onPress, onDelete }: NoteCardProps) {
               </View>
             </TouchableOpacity>
           </Animated.View>
-        </PanGestureHandler>
+        </GestureDetector>
       </View>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -220,7 +174,7 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     width: DELETE_BUTTON_WIDTH,
-    backgroundColor: "#E74C3C",
+    backgroundColor: "#E5484D",
     justifyContent: "center",
     alignItems: "center",
   },

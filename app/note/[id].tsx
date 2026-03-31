@@ -14,7 +14,6 @@ import { Controller, useForm } from "react-hook-form";
 import {
   ActivityIndicator,
   Alert,
-  Animated,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -24,10 +23,16 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useNoteRepository } from "@/src/repositories/noteRepository";
 import { noteSchema, type NoteFormValues } from "@/src/schemas/noteSchema";
+import { Skeleton } from "@/src/components/ui/Skeleton";
 import type { Note } from "@/src/types/note";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -49,25 +54,18 @@ const hitSlop = { top: 10, bottom: 10, left: 10, right: 10 };
 // ─── Animated inline error ────────────────────────────────────────────────────
 
 function AnimatedError({ message }: { message?: string }) {
-  const opacity = useRef(new Animated.Value(0)).current;
+  const opacity = useSharedValue(0);
 
   useEffect(() => {
-    if (message) {
-      opacity.setValue(0);
-      Animated.timing(opacity, {
-        toValue: 1,
-        duration: 220,
-        useNativeDriver: true,
-      }).start();
-    } else {
-      opacity.setValue(0);
-    }
+    opacity.value = withTiming(message ? 1 : 0, { duration: 220 });
   }, [message, opacity]);
+
+  const animStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
 
   if (!message) return null;
 
   return (
-    <Animated.View style={{ opacity }}>
+    <Animated.View style={animStyle}>
       <Text style={styles.errorText}>{message}</Text>
     </Animated.View>
   );
@@ -76,36 +74,17 @@ function AnimatedError({ message }: { message?: string }) {
 // ─── Skeleton fallback ────────────────────────────────────────────────────────
 
 function NoteSkeleton() {
-  const opacity = useRef(new Animated.Value(0.4)).current;
-
-  useEffect(() => {
-    const anim = Animated.loop(
-      Animated.sequence([
-        Animated.timing(opacity, {
-          toValue: 1,
-          duration: 700,
-          useNativeDriver: true,
-        }),
-        Animated.timing(opacity, {
-          toValue: 0.4,
-          duration: 700,
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    anim.start();
-    return () => anim.stop();
-  }, [opacity]);
-
   return (
-    <Animated.View style={[styles.skeleton, { opacity }]}>
-      <View style={styles.skeletonTitle} />
-      <View style={styles.skeletonLine} />
-      <View style={[styles.skeletonLine, styles.skeletonLineShort]} />
-      <View style={[styles.skeletonLine, { marginTop: 16 }]} />
-      <View style={styles.skeletonLine} />
-      <View style={[styles.skeletonLine, styles.skeletonLineShort]} />
-    </Animated.View>
+    <View style={styles.skeleton}>
+      <Skeleton width="70%" height={28} borderRadius={6} style={{ marginBottom: 8 }} />
+      <Skeleton width="100%" height={14} />
+      <Skeleton width="85%" height={14} />
+      <Skeleton width="60%" height={14} />
+      <View style={{ marginTop: 16 }}>
+        <Skeleton width="100%" height={14} />
+        <Skeleton width="75%" height={14} style={{ marginTop: 8 }} />
+      </View>
+    </View>
   );
 }
 
@@ -129,13 +108,11 @@ function NoteContent({ id }: { id: string }) {
   const insets = useSafeAreaInsets();
   const repo = useNoteRepository();
 
-  // Stable promise — memoized on id + repo reference
   const notePromise = useMemo(
     () => repo.getNoteById(id).catch(() => null),
     [id, repo],
   );
 
-  // `use()` suspends until the promise resolves; parent Suspense shows skeleton
   const initialNote = use(notePromise);
 
   const [note, setNote] = useState<Note | null>(initialNote);
@@ -584,20 +561,5 @@ const styles = StyleSheet.create({
     padding: 20,
     backgroundColor: "#F5F5F7",
     gap: 12,
-  },
-  skeletonTitle: {
-    height: 28,
-    width: "70%",
-    borderRadius: 6,
-    backgroundColor: "#E5E5EA",
-    marginBottom: 8,
-  },
-  skeletonLine: {
-    height: 14,
-    borderRadius: 4,
-    backgroundColor: "#E5E5EA",
-  },
-  skeletonLineShort: {
-    width: "60%",
   },
 });
