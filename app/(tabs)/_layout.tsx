@@ -20,6 +20,7 @@ export default function TabLayout() {
         name="index"
         options={{
           title: "Notes",
+          headerShown: false,
           tabBarIcon: ({ color }) => (
             <IconSymbol size={28} name="note.text" color={color} />
           ),
