@@ -99,8 +99,43 @@ export function useNoteRepository() {
     [db],
   );
 
+  /**
+   * Busca notas por título e/ou conteúdo com suporte a filtro de data.
+   * @param query - Texto a buscar em title e content
+   * @param dateFrom - Timestamp mínimo de criação (null = sem filtro)
+   * @param sort - Critério de ordenação
+   */
+  const searchNotes = useCallback(
+    (
+      query: string,
+      dateFrom: number | null,
+      sort: SortOrder,
+    ): Promise<Note[]> => {
+      const order = buildOrderClause(sort);
+      const term = `%${query}%`;
+      if (dateFrom !== null) {
+        return db.getAllAsync<Note>(
+          `SELECT * FROM notes WHERE (title LIKE ? OR content LIKE ?) AND created_at >= ? ${order};`,
+          [term, term, dateFrom],
+        );
+      }
+      return db.getAllAsync<Note>(
+        `SELECT * FROM notes WHERE (title LIKE ? OR content LIKE ?) ${order};`,
+        [term, term],
+      );
+    },
+    [db],
+  );
+
   return useMemo(
-    () => ({ getAllNotes, getNoteById, createNote, updateNote, deleteNote }),
-    [getAllNotes, getNoteById, createNote, updateNote, deleteNote],
+    () => ({
+      getAllNotes,
+      getNoteById,
+      createNote,
+      updateNote,
+      deleteNote,
+      searchNotes,
+    }),
+    [getAllNotes, getNoteById, createNote, updateNote, deleteNote, searchNotes],
   );
 }

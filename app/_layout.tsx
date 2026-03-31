@@ -8,6 +8,7 @@ import { SQLiteProvider } from "expo-sqlite";
 import { StatusBar } from "expo-status-bar";
 import { Suspense } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "react-native-reanimated";
 
 import { useColorScheme } from "@/hooks/use-color-scheme";
@@ -19,7 +20,7 @@ export const unstable_settings = {
 
 function LoadingFallback() {
   return (
-    <View style={styles.loading}>
+    <View style={rootStyles.loading}>
       <ActivityIndicator size="large" />
     </View>
   );
@@ -29,28 +30,33 @@ export default function RootLayout() {
   const colorScheme = useColorScheme();
 
   return (
-    <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
-      <Suspense fallback={<LoadingFallback />}>
-        <SQLiteProvider
-          databaseName="notes.db"
-          onInit={runMigrations}
-          useSuspense
-        >
-          <Stack>
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen
-              name="note/[id]"
-              options={{ title: "Note", headerBackTitle: "Back" }}
-            />
-          </Stack>
-          <StatusBar style="auto" />
-        </SQLiteProvider>
-      </Suspense>
-    </ThemeProvider>
+    <GestureHandlerRootView style={rootStyles.flex}>
+      <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
+        <Suspense fallback={<LoadingFallback />}>
+          <SQLiteProvider
+            databaseName="notes.db"
+            onInit={runMigrations}
+            useSuspense
+          >
+            <Stack>
+              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen
+                name="note/[id]"
+                options={{ title: "Note", headerBackTitle: "Back" }}
+              />
+            </Stack>
+            <StatusBar style="auto" />
+          </SQLiteProvider>
+        </Suspense>
+      </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }
 
-const styles = StyleSheet.create({
+const rootStyles = StyleSheet.create({
+  flex: {
+    flex: 1,
+  },
   loading: {
     flex: 1,
     alignItems: "center",

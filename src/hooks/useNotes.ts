@@ -1,7 +1,36 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useNoteRepository } from "../repositories/noteRepository";
 import type { Note, NoteInput, SortOrder } from "../types/note";
+
+export type DateFilter = "all" | "today" | "week" | "month";
+
+function dateFilterToTimestamp(filter: DateFilter): number | null {
+  if (filter === "all") return null;
+  const now = new Date();
+  switch (filter) {
+    case "today": {
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      return start.getTime();
+    }
+    case "week": {
+      const d = new Date(now);
+      d.setDate(d.getDate() - 7);
+      return d.getTime();
+    }
+    case "month": {
+      const d = new Date(now);
+      d.setDate(d.getDate() - 30);
+      return d.getTime();
+    }
+  }
+}
+
+interface UseNotesOptions {
+  initialSort?: SortOrder;
+  searchQuery?: string;
+  dateFilter?: DateFilter;
+}
 
 interface UseNotesReturn {
   notes: Note[];
@@ -18,12 +47,15 @@ interface UseNotesReturn {
 /**
  * Encapsula o acesso ao repositório de notas e gerencia o estado local.
  * Deve ser usado dentro de um componente descendente de `SQLiteProvider`.
- *
- * @param initialSort - Ordenação inicial (padrão: 'newest')
  */
-export function useNotes(initialSort: SortOrder = "newest"): UseNotesReturn {
+export function useNotes({
+  initialSort = "newest",
+  searchQuery = "",
+  dateFilter = "all",
+}: UseNotesOptions = {}): UseNotesReturn {
   const {
     getAllNotes,
+    searchNotes,
     createNote: repoCreate,
     updateNote: repoUpdate,
     deleteNote: repoDelete,
@@ -34,10 +66,21 @@ export function useNotes(initialSort: SortOrder = "newest"): UseNotesReturn {
   const [error, setError] = useState<Error | null>(null);
   const [sort, setSort] = useState<SortOrder>(initialSort);
 
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const refresh = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await getAllNotes(sort);
+      let data: Note[];
+      if (searchQuery.trim().length > 0) {
+        const dateFrom = dateFilterToTimestamp(dateFilter);
+        data = await searchNotes(searchQuery.trim(), dateFrom, sort);
+      } else if (dateFilter !== "all") {
+        const dateFrom = dateFilterToTimestamp(dateFilter);
+        data = await searchNotes("", dateFrom, sort);
+      } else {
+        data = await getAllNotes(sort);
+      }
       setNotes(data);
       setError(null);
     } catch (e) {
@@ -45,10 +88,16 @@ export function useNotes(initialSort: SortOrder = "newest"): UseNotesReturn {
     } finally {
       setIsLoading(false);
     }
-  }, [getAllNotes, sort]);
+  }, [getAllNotes, searchNotes, sort, searchQuery, dateFilter]);
 
   useEffect(() => {
-    refresh();
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      refresh();
+    }, 300);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
   }, [refresh]);
 
   const createNote = useCallback(
