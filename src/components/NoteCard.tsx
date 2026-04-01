@@ -24,6 +24,8 @@ const dateFormatter = new Intl.DateTimeFormat("pt-BR", {
   day: "2-digit",
   month: "short",
   year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
 });
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -122,6 +124,9 @@ export function NoteCard({ note, onPress, onDelete, index = 0 }: NoteCardProps) 
             >
               <View style={[styles.accent, { backgroundColor: accent }]} />
               <View style={styles.content}>
+                <Text style={styles.date}>
+                  {dateFormatter.format(new Date(note.created_at))}
+                </Text>
                 <Text
                   style={styles.title}
                   numberOfLines={1}
@@ -138,9 +143,6 @@ export function NoteCard({ note, onPress, onDelete, index = 0 }: NoteCardProps) 
                     {note.content}
                   </Text>
                 ) : null}
-                <Text style={styles.date}>
-                  {dateFormatter.format(new Date(note.updated_at))}
-                </Text>
               </View>
             </TouchableOpacity>
           </Animated.View>
@@ -218,10 +220,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#687076",
     lineHeight: 18,
-    marginBottom: 6,
   },
   date: {
     fontSize: 11,
     color: "#9BA1A6",
+    marginBottom: 3,
   },
 });
