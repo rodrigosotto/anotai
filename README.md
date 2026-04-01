@@ -1,160 +1,137 @@
-# anotai
+# Anotaí
 
-A minimal, offline-first notes app for Android and iOS — inspired by Evernote.  
-Built with React Native, Expo, and SQLite. No backend required.
-
----
-
-## Features
-
-- Create, edit, and delete notes
-- Persistent local storage via SQLite
-- Sort by newest, oldest, or alphabetical order
-- Clean architecture with repository pattern
-- Type-safe from database to UI
-
----
+Aplicativo de notas pessoais estilo Evernote, construído com React Native + Expo.  
+Foco em CRUD confiável, performance e boa experiência mobile.
 
 ## Stack
 
-| Layer      | Technology                        |
-| ---------- | --------------------------------- |
-| Framework  | React Native 0.81 + Expo SDK 54   |
-| Navigation | Expo Router 6 (file-based)        |
-| Database   | expo-sqlite 16                    |
-| Language   | TypeScript 5.9 (strict)           |
-| Animations | react-native-reanimated 4         |
-| Icons      | @expo/vector-icons + expo-symbols |
+| Camada | Tecnologia |
+|--------|-----------|
+| Framework | React Native 0.81 + Expo SDK 54 |
+| Navegação | Expo Router v6 (file-based) |
+| Persistência | expo-sqlite (SQLite + FTS5) |
+| Formulários | react-hook-form + zod |
+| Animações | react-native-reanimated v4 |
+| Gestos | react-native-gesture-handler v2 |
+| Preferências | expo-secure-store |
+| Tipografia | Inter (expo-google-fonts) |
 
----
+## Pré-requisitos
 
-## Getting started
+- [Node.js](https://nodejs.org/) >= 20
+- [npm](https://npmjs.com/) >= 10
+- [Expo CLI](https://docs.expo.dev/get-started/installation/): `npm install -g expo`
+- [EAS CLI](https://docs.expo.dev/eas/) (apenas para builds): `npm install -g eas-cli`
+- Para iOS: Xcode 16+ (macOS)
+- Para Android: Android Studio + SDK 34+
 
-**Prerequisites:** Node.js 18+, npm, and either Expo Go or a simulator/emulator.
+## Como rodar localmente
 
 ```bash
-# 1. Install dependencies
+# 1. Instalar dependências
 npm install
 
-# 2. Start the development server
+# 2. Iniciar o servidor de desenvolvimento
 npx expo start
+
+# 3. Abrir no dispositivo/simulador
+# - Pressione 'i' para iOS Simulator
+# - Pressione 'a' para Android Emulator
+# - Escaneie o QR code com Expo Go (iOS/Android)
 ```
 
-From the terminal output, press:
-
-- `i` — open iOS Simulator
-- `a` — open Android Emulator
-- `s` — scan QR code with Expo Go (Android/iOS)
-
----
-
-## Scripts
+## Como rodar os testes
 
 ```bash
-npm start          # start Expo dev server
-npm run ios        # run on iOS simulator
-npm run android    # run on Android emulator
-npm run web        # run in browser
-npm run lint       # run ESLint
+# Rodar todos os testes
+npm test
+
+# Rodar com watch mode
+npm test -- --watch
+
+# Gerar relatório de cobertura
+npm test -- --coverage
 ```
 
----
+## Como gerar build com EAS
 
-## Project structure
-
-```
-app/
-  _layout.tsx          # root layout — SQLiteProvider + navigation stack
-  (tabs)/
-    _layout.tsx        # tab bar (Notes + New Note)
-    index.tsx          # notes list
-    new.tsx            # create note
-  note/
-    [id].tsx           # note detail / edit
-
-src/
-  types/
-    note.ts            # Note, NoteInput, SortOrder
-  db/
-    schema.ts          # DDL + initDatabase()
-    migrations.ts      # versioned migrations system
-  repositories/
-    noteRepository.ts  # CRUD hooks (useSQLiteContext)
-  hooks/
-    useNotes.ts        # state + repository integration
-
-components/            # shared UI components
-constants/             # theme, colors
-hooks/                 # utility hooks (useColorScheme, etc.)
-```
-
----
-
-## Architecture
-
-```
-UI (screens)
-    ↓
-useNotes (hook)
-    ↓
-useNoteRepository (repository)
-    ↓
-expo-sqlite (SQLiteProvider)
-    ↓
-notes.db (local SQLite file)
-```
-
-Business logic lives in hooks and repositories, never in screen components.  
-The database is initialized with `SQLiteProvider` at the root layout using `useSuspense`.  
-Migrations run automatically on startup — adding a new migration is a one-liner in `src/db/migrations.ts`.
-
----
-
-## Database
-
-File: `notes.db` (local, not synced)
-
-```sql
-CREATE TABLE notes (
-  id         TEXT    PRIMARY KEY NOT NULL,
-  title      TEXT    NOT NULL,
-  content    TEXT    NOT NULL,
-  created_at INTEGER NOT NULL,   -- Unix ms
-  updated_at INTEGER NOT NULL    -- Unix ms
-);
-```
-
-Migrations are tracked in `__migrations` and run only once per version.
-
----
-
-## Roadmap
-
-- [ ] Full CRUD UI (list, create, edit, delete)
-- [ ] Search by title and content
-- [ ] Sort controls in the list
-- [ ] Swipe to delete
-- [ ] Tags
-- [ ] Favorites
-- [ ] Remote sync
-- [ ] Authentication
+### Configuração inicial (apenas uma vez)
 
 ```bash
-npm run reset-project
+# Login na conta Expo
+eas login
+
+# Configurar o projeto (gera projectId)
+eas init
+
+# Atualizar o EAS_PROJECT_ID em app.json e .env
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+### Builds
 
-## Learn more
+```bash
+# Build de desenvolvimento (com expo-dev-client)
+# iOS Simulator + Android APK
+eas build --profile development
 
-To learn more about developing your project with Expo, look at the following resources:
+# Build de preview (distribuição interna)
+# Para testar com TestFlight / Firebase App Distribution
+eas build --profile preview
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+# Build de produção (App Store / Play Store)
+eas build --profile production
 
-## Join the community
+# Especificar plataforma
+eas build --platform ios --profile production
+eas build --platform android --profile production
+```
 
-Join our community of developers creating universal apps.
+### Submissão às lojas
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+```bash
+# Submeter para App Store Connect
+eas submit --platform ios --profile production
+
+# Submeter para Google Play
+eas submit --platform android --profile production
+```
+
+## Estrutura do projeto
+
+```
+anotai/
+├── app/                    # Rotas (Expo Router)
+│   ├── (tabs)/             # Tab navigator
+│   │   ├── index.tsx       # Lista de notas
+│   │   └── new.tsx         # Criar nota
+│   ├── note/[id].tsx       # Detalhe / editar nota
+│   └── _layout.tsx         # Layout raiz (ErrorBoundary, Fonts, SQLite)
+├── src/
+│   ├── components/         # Componentes reutilizáveis
+│   │   ├── ui/             # Componentes primitivos (Skeleton, Toast)
+│   │   ├── NoteCard.tsx    # Card da lista
+│   │   └── SortSheet.tsx   # Bottom sheet de ordenação
+│   ├── context/            # Contextos React (ToastContext)
+│   ├── db/                 # Migrations e schema SQLite
+│   ├── hooks/              # Custom hooks (useNotes, useSortPreference)
+│   ├── repositories/       # Acesso ao banco de dados
+│   ├── schemas/            # Validações Zod
+│   ├── theme/              # Design system (tokens, cores, useTheme)
+│   ├── types/              # Tipos TypeScript globais
+│   └── __tests__/          # Testes unitários
+├── app.json                # Configuração Expo
+├── eas.json                # Perfis de build EAS
+└── jest.config.js          # Configuração de testes
+```
+
+## Funcionalidades
+
+- **CRUD completo** de notas (criar, listar, visualizar, editar, excluir)
+- **Busca full-text** com FTS5 do SQLite (muito mais rápido que LIKE)
+- **Ordenação persistida** por recentes, antigas ou alfabética (SecureStore)
+- **Filtro por data** (hoje, 7 dias, este mês)
+- **Compartilhar nota** como arquivo .txt
+- **Tema claro/escuro** automático
+- **Skeleton loaders** com shimmer
+- **Animações** com Reanimated (card entry, swipe-to-delete, bottom sheet)
+- **Error boundary** global com tela de fallback amigável

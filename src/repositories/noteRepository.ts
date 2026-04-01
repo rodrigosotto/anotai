@@ -28,7 +28,6 @@ export function useNoteRepository() {
 
   /**
    * Retorna todas as notas ordenadas pelo critério especificado.
-   * @param sort - Critério de ordenação (padrão: 'newest')
    */
   const getAllNotes = useCallback(
     (sort: SortOrder = "newest"): Promise<Note[]> => {
@@ -40,7 +39,6 @@ export function useNoteRepository() {
 
   /**
    * Retorna uma nota pelo id, ou `null` se não existir.
-   * @param id - Identificador único da nota
    */
   const getNoteById = useCallback(
     (id: string): Promise<Note | null> =>
@@ -50,7 +48,7 @@ export function useNoteRepository() {
 
   /**
    * Cria uma nova nota e retorna o registro persistido.
-   * @param input - Campos obrigatórios para criação (title, content)
+   * O trigger `notes_fts_insert` mantém o índice FTS5 sincronizado.
    */
   const createNote = useCallback(
     async (input: NoteInput): Promise<Note> => {
@@ -67,8 +65,7 @@ export function useNoteRepository() {
 
   /**
    * Atualiza os campos de uma nota existente e retorna o registro atualizado.
-   * @param id - Identificador da nota a ser atualizada
-   * @param input - Campos a atualizar (title e/ou content)
+   * O trigger `notes_fts_update` mantém o índice FTS5 sincronizado.
    * @throws Error se a nota não for encontrada
    */
   const updateNote = useCallback(
@@ -91,7 +88,7 @@ export function useNoteRepository() {
 
   /**
    * Remove uma nota pelo id.
-   * @param id - Identificador da nota a ser removida
+   * O trigger `notes_fts_delete` mantém o índice FTS5 sincronizado.
    */
   const deleteNote = useCallback(
     async (id: string): Promise<void> => {
@@ -101,10 +98,14 @@ export function useNoteRepository() {
   );
 
   /**
-   * Busca notas por título e/ou conteúdo com suporte a filtro de data.
-   * @param query - Texto a buscar em title e content
-   * @param dateFrom - Timestamp mínimo de criação (null = sem filtro)
-   * @param sort - Critério de ordenação
+   * Busca notas com suporte a FTS5 (quando há termo de busca) ou filtro de data.
+   *
+   * Performance:
+   * - FTS5 MATCH: usa índice invertido → O(log n + k), ideal para texto longo
+   * - LIKE '%term%': full-table-scan → O(n), aceitável apenas para listas pequenas
+   *
+   * A query FTS5 une a virtual table com a tabela real via rowid para obter
+   * todos os campos (id, created_at, updated_at) que o índice não armazena.
    */
   const searchNotes = useCallback(
     (
@@ -113,17 +114,47 @@ export function useNoteRepository() {
       sort: SortOrder,
     ): Promise<Note[]> => {
       const order = buildOrderClause(sort);
-      const term = `%${query}%`;
-      if (dateFrom !== null) {
+      const trimmed = query.trim();
+
+      if (trimmed.length > 0) {
+        /*
+         * FTS5 MATCH com escape de aspas para evitar erros de sintaxe.
+         * O operador * no final habilita prefix-search: "re*" casa "react", "readme" etc.
+         * Usamos JOIN para recuperar id e timestamps da tabela principal.
+         */
+        const ftsQuery = `"${trimmed.replace(/"/g, '""')}"*`;
+
+        if (dateFrom !== null) {
+          return db.getAllAsync<Note>(
+            `SELECT n.*
+             FROM notes n
+             JOIN notes_fts ON notes_fts.rowid = n.rowid
+             WHERE notes_fts MATCH ?
+               AND n.created_at >= ?
+             ${order};`,
+            [ftsQuery, dateFrom],
+          );
+        }
+
         return db.getAllAsync<Note>(
-          `SELECT * FROM notes WHERE (title LIKE ? OR content LIKE ?) AND created_at >= ? ${order};`,
-          [term, term, dateFrom],
+          `SELECT n.*
+           FROM notes n
+           JOIN notes_fts ON notes_fts.rowid = n.rowid
+           WHERE notes_fts MATCH ?
+           ${order};`,
+          [ftsQuery],
         );
       }
-      return db.getAllAsync<Note>(
-        `SELECT * FROM notes WHERE (title LIKE ? OR content LIKE ?) ${order};`,
-        [term, term],
-      );
+
+      // Sem termo de busca: filtra apenas por data (sem necessidade de FTS5)
+      if (dateFrom !== null) {
+        return db.getAllAsync<Note>(
+          `SELECT * FROM notes WHERE created_at >= ? ${order};`,
+          [dateFrom],
+        );
+      }
+
+      return db.getAllAsync<Note>(`SELECT * FROM notes ${order};`);
     },
     [db],
   );

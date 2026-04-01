@@ -1,12 +1,11 @@
 import { zodResolver } from "@hookform/resolvers/zod";
+import * as FileSystem from "expo-file-system";
 import { router, useLocalSearchParams, useNavigation } from "expo-router";
+import * as Sharing from "expo-sharing";
 import {
-  Suspense,
-  use,
   useCallback,
   useEffect,
   useLayoutEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
@@ -30,9 +29,9 @@ import Animated, {
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { Skeleton } from "@/src/components/ui/Skeleton";
 import { useNoteRepository } from "@/src/repositories/noteRepository";
 import { noteSchema, type NoteFormValues } from "@/src/schemas/noteSchema";
-import { Skeleton } from "@/src/components/ui/Skeleton";
 import type { Note } from "@/src/types/note";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -50,6 +49,40 @@ function countWords(text: string): number {
 }
 
 const hitSlop = { top: 10, bottom: 10, left: 10, right: 10 };
+
+// ─── Share helper ─────────────────────────────────────────────────────────────
+
+async function shareNote(note: Note): Promise<void> {
+  const isAvailable = await Sharing.isAvailableAsync();
+  if (!isAvailable) {
+    Alert.alert("Compartilhamento indisponível", "Seu dispositivo não suporta esta função.");
+    return;
+  }
+
+  const createdAt = new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(note.created_at));
+
+  const content = `# ${note.title}\n\n${note.content}\n\n---\nCriado em: ${createdAt}`;
+
+  // Arquivo temporário em cache — será limpo pelo sistema operacional
+  const filename = `nota_${note.id.slice(0, 8)}.txt`;
+  const uri = `${FileSystem.cacheDirectory}${filename}`;
+
+  await FileSystem.writeAsStringAsync(uri, content, {
+    encoding: FileSystem.EncodingType.UTF8,
+  });
+
+  await Sharing.shareAsync(uri, {
+    mimeType: "text/plain",
+    dialogTitle: `Compartilhar: ${note.title}`,
+    UTI: "public.plain-text",
+  });
+}
 
 // ─── Animated inline error ────────────────────────────────────────────────────
 
@@ -94,11 +127,7 @@ export default function NoteDetailScreen() {
   const params = useLocalSearchParams<{ id: string }>();
   const id = Array.isArray(params.id) ? params.id[0] : (params.id ?? "");
 
-  return (
-    <Suspense fallback={<NoteSkeleton />}>
-      <NoteContent id={id} />
-    </Suspense>
-  );
+  return <NoteContent id={id} />;
 }
 
 // ─── Inner component (uses React 19 `use()` for data loading) ────────────────
@@ -108,15 +137,19 @@ function NoteContent({ id }: { id: string }) {
   const insets = useSafeAreaInsets();
   const repo = useNoteRepository();
 
-  const notePromise = useMemo(
-    () => repo.getNoteById(id).catch(() => null),
-    [id, repo],
-  );
-
-  const initialNote = use(notePromise);
-
-  const [note, setNote] = useState<Note | null>(initialNote);
+  const [note, setNote] = useState<Note | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
+
+  useEffect(() => {
+    setIsLoading(true);
+    repo
+      .getNoteById(id)
+      .then((n) => setNote(n))
+      .catch(() => setNote(null))
+      .finally(() => setIsLoading(false));
+  }, [id, repo]);
 
   const { control, handleSubmit, reset, formState, watch } =
     useForm<NoteFormValues>({
@@ -181,6 +214,20 @@ function NoteContent({ id }: { id: string }) {
     );
   }, [note, repo]);
 
+  // ── Share handler ─────────────────────────────────────────────────────────
+
+  const onShare = useCallback(async () => {
+    if (!note || isSharing) return;
+    setIsSharing(true);
+    try {
+      await shareNote(note);
+    } catch {
+      Alert.alert("Erro", "Não foi possível compartilhar a nota.");
+    } finally {
+      setIsSharing(false);
+    }
+  }, [note, isSharing]);
+
   // ── Header configuration ──────────────────────────────────────────────────
 
   useLayoutEffect(() => {
@@ -226,6 +273,18 @@ function NoteContent({ id }: { id: string }) {
         headerRight: note
           ? () => (
               <View style={styles.headerRow}>
+                {isSharing ? (
+                  <ActivityIndicator size="small" />
+                ) : (
+                  <TouchableOpacity
+                    onPress={onShare}
+                    hitSlop={hitSlop}
+                    accessibilityRole="button"
+                    accessibilityLabel="Compartilhar nota"
+                  >
+                    <Text style={styles.headerAction}>Compartilhar</Text>
+                  </TouchableOpacity>
+                )}
                 <TouchableOpacity
                   onPress={startEditing}
                   hitSlop={hitSlop}
@@ -259,7 +318,15 @@ function NoteContent({ id }: { id: string }) {
     startEditing,
     cancelEditing,
     onDelete,
+    onShare,
+    isSharing,
   ]);
+
+  // ── Loading ──────────────────────────────────────────────────────────────
+
+  if (isLoading) {
+    return <NoteSkeleton />;
+  }
 
   // ── Not found ─────────────────────────────────────────────────────────────
 
@@ -298,7 +365,6 @@ function NoteContent({ id }: { id: string }) {
           ]}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Title */}
           <Controller
             control={control}
             name="title"
@@ -325,7 +391,6 @@ function NoteContent({ id }: { id: string }) {
             )}
           />
 
-          {/* Content */}
           <Controller
             control={control}
             name="content"
@@ -405,7 +470,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#F5F5F7",
   },
-  // Header
   headerLoader: {
     marginRight: 4,
   },
@@ -415,7 +479,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   headerAction: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: "600",
     color: "#0a7ea4",
   },
@@ -433,7 +497,6 @@ const styles = StyleSheet.create({
   headerTrashIcon: {
     fontSize: 18,
   },
-  // Not found
   notFoundContainer: {
     flex: 1,
     alignItems: "center",
@@ -469,7 +532,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontSize: 15,
   },
-  // View mode
   viewScroll: {
     padding: 20,
   },
@@ -496,7 +558,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#9BA1A6",
   },
-  // Edit mode
   editScroll: {
     padding: 16,
     gap: 12,
@@ -555,7 +616,6 @@ const styles = StyleSheet.create({
     color: "#FF3B30",
     fontWeight: "600",
   },
-  // Skeleton
   skeleton: {
     flex: 1,
     padding: 20,

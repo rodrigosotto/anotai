@@ -24,8 +24,10 @@ import Animated, {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { NoteCard } from "@/src/components/NoteCard";
+import { SortSheet } from "@/src/components/SortSheet";
 import { Skeleton } from "@/src/components/ui/Skeleton";
 import { useNotes, type DateFilter } from "@/src/hooks/useNotes";
+import { useSortPreference } from "@/src/hooks/useSortPreference";
 import type { Note } from "@/src/types/note";
 
 // ─── Skeleton list ────────────────────────────────────────────────────────────
@@ -35,11 +37,11 @@ function SkeletonList() {
     <View style={styles.skeletonContainer}>
       {[0, 1, 2, 3].map((i) => (
         <View key={i} style={styles.skeletonCard}>
-          <Skeleton width={4} height={88} borderRadius={0} />
+          <Skeleton width={4} height={96} borderRadius={0} />
           <View style={styles.skeletonContent}>
+            <Skeleton width="30%" height={10} />
             <Skeleton width="60%" height={13} />
             <Skeleton width="90%" height={11} />
-            <Skeleton width="30%" height={10} />
           </View>
         </View>
       ))}
@@ -116,10 +118,13 @@ export default function NotesScreen() {
   const [rawQuery, setRawQuery] = useState("");
   const [dateFilter, setDateFilter] = useState<DateFilter>("all");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [sortSheetOpen, setSortSheetOpen] = useState(false);
 
+  const { sort, setSort } = useSortPreference();
   const deferredQuery = useDeferredValue(rawQuery);
 
   const { notes, isLoading, error, deleteNote, refresh } = useNotes({
+    sort,
     searchQuery: deferredQuery,
     dateFilter,
   });
@@ -207,6 +212,12 @@ export default function NotesScreen() {
     ? `${notes.length} resultado${notes.length !== 1 ? "s" : ""}`
     : `${notes.length} nota${notes.length !== 1 ? "s" : ""}`;
 
+  const sortLabel: Record<typeof sort, string> = {
+    newest: "↓ Recentes",
+    oldest: "↑ Antigas",
+    alpha: "A–Z",
+  };
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -219,15 +230,26 @@ export default function NotesScreen() {
             <Text style={styles.headerCount}>{counterLabel}</Text>
           )}
         </View>
-        <TouchableOpacity
-          onPress={toggleSearch}
-          style={styles.headerIconBtn}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          accessibilityLabel={searchOpen ? "Fechar busca" : "Abrir busca"}
-          accessibilityRole="button"
-        >
-          <Text style={styles.headerIcon}>{searchOpen ? "✕" : "🔍"}</Text>
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            onPress={() => setSortSheetOpen(true)}
+            style={styles.sortBtn}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityLabel="Ordenar notas"
+            accessibilityRole="button"
+          >
+            <Text style={styles.sortBtnLabel}>{sortLabel[sort]}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={toggleSearch}
+            style={styles.headerIconBtn}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityLabel={searchOpen ? "Fechar busca" : "Abrir busca"}
+            accessibilityRole="button"
+          >
+            <Text style={styles.headerIcon}>{searchOpen ? "✕" : "🔍"}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* ── Animated search bar ── */}
@@ -279,24 +301,30 @@ export default function NotesScreen() {
       {/* ── FAB ── */}
       <Animated.View
         entering={ZoomIn.springify().damping(14)}
-        style={[
-          styles.fab,
-          { bottom: insets.bottom + 24 },
-          fabScaleStyle,
-        ]}
+        style={[styles.fab, { bottom: insets.bottom + 24 }]}
       >
-        <TouchableOpacity
-          onPress={onFabPress}
-          onPressIn={onFabPressIn}
-          onPressOut={onFabPressOut}
-          activeOpacity={1}
-          accessibilityLabel="Criar nova nota"
-          accessibilityRole="button"
-          style={styles.fabInner}
-        >
-          <Text style={styles.fabIcon}>＋</Text>
-        </TouchableOpacity>
+        <Animated.View style={[styles.fabInnerWrap, fabScaleStyle]}>
+          <TouchableOpacity
+            onPress={onFabPress}
+            onPressIn={onFabPressIn}
+            onPressOut={onFabPressOut}
+            activeOpacity={1}
+            accessibilityLabel="Criar nova nota"
+            accessibilityRole="button"
+            style={styles.fabInner}
+          >
+            <Text style={styles.fabIcon}>＋</Text>
+          </TouchableOpacity>
+        </Animated.View>
       </Animated.View>
+
+      {/* ── Sort sheet ── */}
+      <SortSheet
+        visible={sortSheetOpen}
+        currentSort={sort}
+        onSelect={setSort}
+        onClose={() => setSortSheetOpen(false)}
+      />
     </View>
   );
 }
@@ -329,6 +357,22 @@ const styles = StyleSheet.create({
   headerCount: {
     fontSize: 12,
     color: "#687076",
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  sortBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: "#EDEDED",
+  },
+  sortBtnLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#11181C",
   },
   headerIconBtn: {
     width: 36,
@@ -427,7 +471,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     backgroundColor: "#fff",
     borderRadius: 12,
-    height: 88,
+    height: 96,
     overflow: "hidden",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
@@ -453,6 +497,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.35,
     shadowRadius: 8,
     elevation: 6,
+  },
+  fabInnerWrap: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 28,
+    overflow: "hidden",
   },
   fabInner: {
     flex: 1,

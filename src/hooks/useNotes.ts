@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useNoteRepository } from "../repositories/noteRepository";
 import type { Note, NoteInput, SortOrder } from "../types/note";
@@ -27,7 +27,7 @@ function dateFilterToTimestamp(filter: DateFilter): number | null {
 }
 
 interface UseNotesOptions {
-  initialSort?: SortOrder;
+  sort?: SortOrder;
   searchQuery?: string;
   dateFilter?: DateFilter;
 }
@@ -36,8 +36,6 @@ interface UseNotesReturn {
   notes: Note[];
   isLoading: boolean;
   error: Error | null;
-  sort: SortOrder;
-  setSort: (sort: SortOrder) => void;
   refresh: () => Promise<void>;
   createNote: (input: NoteInput) => Promise<Note>;
   updateNote: (id: string, input: Partial<NoteInput>) => Promise<Note>;
@@ -49,7 +47,7 @@ interface UseNotesReturn {
  * Deve ser usado dentro de um componente descendente de `SQLiteProvider`.
  */
 export function useNotes({
-  initialSort = "newest",
+  sort = "newest",
   searchQuery = "",
   dateFilter = "all",
 }: UseNotesOptions = {}): UseNotesReturn {
@@ -61,10 +59,9 @@ export function useNotes({
     deleteNote: repoDelete,
   } = useNoteRepository();
 
-  const [notes, setNotes] = useState<Note[]>([]);
+  const [rawNotes, setRawNotes] = useState<Note[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
-  const [sort, setSort] = useState<SortOrder>(initialSort);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -72,16 +69,16 @@ export function useNotes({
     setIsLoading(true);
     try {
       let data: Note[];
-      if (searchQuery.trim().length > 0) {
+      const hasQuery = searchQuery.trim().length > 0;
+      const hasDateFilter = dateFilter !== "all";
+
+      if (hasQuery || hasDateFilter) {
         const dateFrom = dateFilterToTimestamp(dateFilter);
         data = await searchNotes(searchQuery.trim(), dateFrom, sort);
-      } else if (dateFilter !== "all") {
-        const dateFrom = dateFilterToTimestamp(dateFilter);
-        data = await searchNotes("", dateFrom, sort);
       } else {
         data = await getAllNotes(sort);
       }
-      setNotes(data);
+      setRawNotes(data);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e : new Error(String(e)));
@@ -99,6 +96,10 @@ export function useNotes({
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, [refresh]);
+
+  // useMemo evita recriar o array de referência quando `rawNotes` não mudou,
+  // prevenindo re-renders desnecessários em FlashList
+  const notes = useMemo(() => rawNotes, [rawNotes]);
 
   const createNote = useCallback(
     async (input: NoteInput): Promise<Note> => {
@@ -130,8 +131,6 @@ export function useNotes({
     notes,
     isLoading,
     error,
-    sort,
-    setSort,
     refresh,
     createNote,
     updateNote,
